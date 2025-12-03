@@ -19,8 +19,16 @@
             "destination": "/backend/server.js"
         },
         {
-            "source": "/(.*)",
+            "source": "/assets/(.*)",
+            "destination": "/frontend/invoice-generator/assets/$1"
+        },
+        {
+            "source": "/(.*)\\.(png|jpg|jpeg|svg|ico|json|js|css|txt)",
             "destination": "/frontend/invoice-generator/$1"
+        },
+        {
+            "source": "/(.*)",
+            "destination": "/frontend/invoice-generator/index.html"
         }
     ]
 }
