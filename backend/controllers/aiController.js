@@ -1,5 +1,5 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const Invoice= require("../models/Invoice")
+const supabase = require("../config/supabase");
 const axios = require("axios");
 // Initialize Gemini Client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -7,17 +7,17 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 
 const parseInvoiceFromText = async (req, res) => {
- const { text } = req.body;
+    const { text } = req.body;
 
- if (!text) {
- return res.status(400).json({ message: "Text is required" });
- }
+    if (!text) {
+        return res.status(400).json({ message: "Text is required" });
+    }
 
- try {
- // Corrected model name
+    try {
+        // Corrected model name
 
 
- const prompt = `
+        const prompt = `
  You are an expert invoice data extraction AI.Analyse the following text and extract the relevant information to create an invoice . 
  The output MUST be a valid JSON object.
 
@@ -40,40 +40,40 @@ ${text}
 ---TEXT END---
 Extract the data and provide only the JSON object.
  `;
-  const model = genAI.getGenerativeModel({
- model: "gemini-2.5-flash", 
- });
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash",
+        });
 
- const result = await model.generateContent(prompt);
+        const result = await model.generateContent(prompt);
 
- const responseText = await result.response.text();
- if(typeof responseText !== 'string'){
-    if(typeof result.text === 'function'){
-        responseText=response.text();
-    }else {
-        throw new Error('Could not extract text from AI response.')
+        const responseText = await result.response.text();
+        if (typeof responseText !== 'string') {
+            if (typeof result.text === 'function') {
+                responseText = response.text();
+            } else {
+                throw new Error('Could not extract text from AI response.')
+            }
+        }
+        const cleanedJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        //  res.json({ success: true, parsed: responseText });
+
+        const parsedData = JSON.parse(cleanedJson);
+        res.status(200).json(parsedData);
+    } catch (error) {
+        console.error("Invoice parsing error:", error);
+        res.status(500).json({
+            message: "Failed to parse invoice data from text.",
+            details: error.message,
+        });
     }
- }
- const cleanedJson=responseText.replace(/```json/g,'').replace(/```/g,'').trim();
-
-//  res.json({ success: true, parsed: responseText });
-
-const parsedData=JSON.parse(cleanedJson);
-res.status(200).json(parsedData);
- } catch (error) {
- console.error("Invoice parsing error:", error);
- res.status(500).json({
- message: "Failed to parse invoice data from text.",
- details: error.message,
- });
- }
 };
 
 // // ✅ Controller to list all available models
 // const listAvailableModels = async (req, res) => {
 //   try {
 //     const models = await genAI.listModels();
-
+// 
 //     res.json({
 //       success: true,
 //       models: models.map(m => ({
@@ -95,108 +95,117 @@ res.status(200).json(parsedData);
 
 
 const listAvailableModels = async (req, res) => {
- try {
- const response = await axios.get(
- "https://generativelanguage.googleapis.com/v1beta/models",
- {
- params: {
- key: process.env.GEMINI_API_KEY,
- },
- }
- );
+    try {
+        const response = await axios.get(
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            {
+                params: {
+                    key: process.env.GEMINI_API_KEY,
+                },
+            }
+        );
 
-res.json({
- success: true,
- models: response.data.models.map(m => ({
- name: m.name,
- displayName: m.displayName,
- description: m.description,
- supportedMethods: m.supportedGenerationMethods,
- })),
- });
- } catch (error) {
- console.error("Error fetching models:", error.response?.data || error.message);
- res.status(500).json({
- message: "Failed to fetch available models.",
- details: error.response?.data || error.message,
- });
- }
+        res.json({
+            success: true,
+            models: response.data.models.map(m => ({
+                name: m.name,
+                displayName: m.displayName,
+                description: m.description,
+                supportedMethods: m.supportedGenerationMethods,
+            })),
+        });
+    } catch (error) {
+        console.error("Error fetching models:", error.response?.data || error.message);
+        res.status(500).json({
+            message: "Failed to fetch available models.",
+            details: error.response?.data || error.message,
+        });
+    }
 };
 
 
 
 
-const generateReminderEmail=async(req,res)=>{
-    const {invoiceId}=req.body;
+const generateReminderEmail = async (req, res) => {
+    const { invoiceId } = req.body;
 
-    if(!invoiceId){
-return res.status(400).json({message:"Invoice ID is required"});
-
-    }
-
-   try{
-    
-    const invoice=await Invoice.findById(invoiceId);
-    if(!invoice){
-        return res.status(404).json({message:"Invoice not found"})
+    if (!invoiceId) {
+        return res.status(400).json({ message: "Invoice ID is required" });
 
     }
 
-const prompt=`
+    try {
+
+        const { data: invoice, error } = await supabase
+            .from('invoices')
+            .select('*')
+            .eq('id', invoiceId)
+            .single();
+
+        if (error || !invoice) {
+            return res.status(404).json({ message: "Invoice not found" })
+        }
+
+        const prompt = `
 You are a professional and police accounting assistance.Write a friendly  reminder email to a client about an overdue or upcoming invoice payment.
 Use the following details to personalise the email:
- - Client Name:${invoice.billTo.clientName}
- - Invoice Number:${invoice.invoiceNumber}
+ - Client Name:${invoice.bill_to.clientName}
+ - Invoice Number:${invoice.invoice_number}
  - Amount Due : ${invoice.total.toFixed(2)}
- - Due Date: ${new Date(invoice.dueDate).toLocaleDateString()}
+ - Due Date: ${new Date(invoice.due_date).toLocaleDateString()}
 
 The tone should be friendly but clear.Keep it concise.Start the email with "Subject:".
 `
-// const response=await genAI.models.generateContent({
-//     model:"gemini-1.5-flash-latest",
-//     contents:prompt,
-// });
+        // const response=await genAI.models.generateContent({
+        //     model:"gemini-1.5-flash-latest",
+        //     contents:prompt,
+        // });
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-    });
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash",
+        });
 
-    const result = await model.generateContent(prompt);
+        const result = await model.generateContent(prompt);
 
-    // Correct way to access the generated text
-    const reminderText = await result.response.text();
+        // Correct way to access the generated text
+        const reminderText = await result.response.text();
 
-    res.status(200).json({ reminderText: reminderText });
+        res.status(200).json({ reminderText: reminderText });
 
-    }catch(error){
-        console.error("Error generating reminder email with AI",error);
-        res.status(500).json({message:"Failed to parse invoice data from text.",details:error.message});
-    }  
+    } catch (error) {
+        console.error("Error generating reminder email with AI", error);
+        res.status(500).json({ message: "Failed to parse invoice data from text.", details: error.message });
+    }
 }
 
-const getDashboardSummary=async(req,res)=>{
-     try{
-const invoices = await Invoice.find({user:req.user.id});
+const getDashboardSummary = async (req, res) => {
+    try {
+        const { data: invoices, error } = await supabase
+            .from('invoices')
+            .select('*')
+            .eq('user_id', req.user.id);
 
-if(invoices.length === 0){
-    return res.status(200).json({insights: ["No invoice data available to generate insights."]});
-}
-//Process and summarize data
-const totalInvoices=invoices.length;
-const paidInvoices= invoices.filter(inv => inv.status === 'Paid');
-const unpaidInvoices=invoices.filter(inv => inv.status !== 'Paid');
-const totalRevenue=paidInvoices.reduce((acc,inv)=> acc + inv.total,0);
-const totalOutstanding= unpaidInvoices.reduce((acc,inv)=>acc + inv.total,0);
+        if (error) throw error;
 
-const dataSummary=`
+        if (invoices.length === 0) {
+            return res.status(200).json({ insights: ["No invoice data available to generate insights."] });
+        }
+        //Process and summarize data
+        const totalInvoices = invoices.length;
+        const paidInvoices = invoices.filter(inv => inv.status === 'Paid');
+        const unpaidInvoices = invoices.filter(inv => inv.status !== 'Paid');
+        const totalRevenue = paidInvoices.reduce((acc, inv) => acc + inv.total, 0);
+        const totalOutstanding = unpaidInvoices.reduce((acc, inv) => acc + inv.total, 0);
+
+        const dataSummary = `
 - Total number of invoices:${totalInvoices}
 - Total paid invoices: ${paidInvoices.length};
 - Total unpaid/pending invoices: ${unpaidInvoices.length}
 - Total revenue from paid invoices:${totalRevenue.toFixed(2)};
 - Total outstanding amount from unpaid/pending invoices:${totalOutstanding.toFixed(2)}
-- Recent invoices (last 5): ${invoices.slice(0,5).map(inv => `Invoice #${inv.invoiceNumber} for ${inv.total.toFixed(2)} with status ${inv.status}`).join(',')}
+- Recent invoices (last 5): ${invoices.slice(0, 5).map(inv => `Invoice #${inv.invoice_number} for ${inv.total.toFixed(2)} with status ${inv.status}`).join(',')}
 `
- const prompt =`
+        const prompt = `
  You are a friendly and insightful financial analyst for a small business owner.
  Based on the following summary of their invoice data,provide 2-3 concise and actionable insights.Each insights should be a short string in a JSON array.
 The insights should be encouraging and helpful.Do not just repeat the data.
@@ -208,22 +217,22 @@ Return your response as a valid JSON object with a single key "insights" which i
 
 Example format:{"insights: ["Your revenue is looking strong this month!", "You have 5 overdue invoices.Consider sending reminders to get paid faster. ]}
  `
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-    });
-    const result = await model.generateContent(prompt);
-    
-    // Correcting the method to get the text
-    const responseText = await result.response.text();
-    
-    const cleanedJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    const parsedData = JSON.parse(cleanedJson);
-    res.status(200).json(parsedData);
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash",
+        });
+        const result = await model.generateContent(prompt);
 
-    }catch(error){
-        console.error("Error dashboard summary with AI",error);
-        res.status(500).json({message:"Failed to parse invoice data from text.",details:error.message});
+        // Correcting the method to get the text
+        const responseText = await result.response.text();
+
+        const cleanedJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsedData = JSON.parse(cleanedJson);
+        res.status(200).json(parsedData);
+
+    } catch (error) {
+        console.error("Error dashboard summary with AI", error);
+        res.status(500).json({ message: "Failed to parse invoice data from text.", details: error.message });
     }
 }
 
-module.exports={parseInvoiceFromText,generateReminderEmail,getDashboardSummary,listAvailableModels}
+module.exports = { parseInvoiceFromText, generateReminderEmail, getDashboardSummary, listAvailableModels }

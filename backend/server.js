@@ -2,7 +2,7 @@ const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 const express = require("express");
 const cors = require("cors");
-const connectDB = require("./config/db");
+// const connectDB = require("./config/db"); // Removed MongoDB connection
 
 const authRoutes = require('./routes/authRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
@@ -18,7 +18,7 @@ app.use(
     })
 );
 //Connect to Database
-connectDB();
+// connectDB(); // Removed MongoDB connection
 
 //Middleware
 app.use(express.json());
